@@ -1,0 +1,2 @@
+import {db,sha256} from '../db/database';import type {AuditEvent} from '../types';
+export async function appendAudit(raw:Omit<AuditEvent,'previousEventHash'|'currentEventHash'>){const latest=await db.auditEvents.orderBy('timestamp').last();const previousEventHash=latest?.currentEventHash||'GENESIS';const currentEventHash=await sha256(JSON.stringify({...raw,previousEventHash}));const event={...raw,previousEventHash,currentEventHash};await db.auditEvents.add(event);return event}

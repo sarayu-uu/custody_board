@@ -1,0 +1,1 @@
+{"name":"yeldurthy-roadshare-monorepo","private":true,"scripts":{"dev":"npm --prefix frontend run dev","build":"npm --prefix frontend run build","test":"npm --prefix frontend test","typecheck":"npm --prefix frontend run typecheck","api":"python -m uvicorn backend.app.main:app --reload"}}
