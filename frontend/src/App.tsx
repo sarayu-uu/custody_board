@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { NavLink, Route, Routes, useNavigate } from "react-router-dom";
+import { NavLink, Route, Routes, useNavigate, useSearchParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -860,9 +860,12 @@ function Status({ value, label }: { value: string; label?: string }) {
 function Schedule() {
   const d = useCore();
   const { role, townId } = useUI();
+  const [searchParams] = useSearchParams();
   const [modal, setModal] = useState(false);
   const [showHistory, setShowHistory] = useState(true);
-  const [boardDay, setBoardDay] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [boardDay, setBoardDay] = useState(
+    searchParams.get("date") || format(new Date(), "yyyy-MM-dd"),
+  );
   const [selectedBooking, setSelectedBooking] = useState<Reservation>();
   const [reschedule, setReschedule] = useState<Reservation>();
   return (
@@ -1047,7 +1050,7 @@ function HourlySchedule({
   boardDay: string;
   onSelect: (booking: Reservation) => void;
 }) {
-  const hours = Array.from({ length: 13 }, (_, i) => i + 6);
+  const hours = Array.from({ length: 24 }, (_, i) => i);
   const today = data.reservations.filter(
     (r) =>
       r.startAt.startsWith(boardDay) &&
@@ -1059,17 +1062,19 @@ function HourlySchedule({
   return (
     <>
       <section className="hourboard">
-        <div className="hourcorner">
-          <b>{format(new Date(`${boardDay}T12:00:00`), "EEEE, d MMM")}</b>
-          <small>Machine</small>
-        </div>
-        <div className="hourheaders">
-          {hours.map((h) => (
-            <span key={h}>
-              {h > 12 ? h - 12 : h}
-              <small>{h >= 12 ? "PM" : "AM"}</small>
-            </span>
-          ))}
+        <div className="hourrow hourheadrow">
+          <div className="hourcorner">
+            <b>{format(new Date(`${boardDay}T12:00:00`), "EEEE, d MMM")}</b>
+            <small>Machine</small>
+          </div>
+          <div className="hourheaders">
+            {hours.map((h) => (
+              <span key={h}>
+                {h === 0 ? 12 : h > 12 ? h - 12 : h}
+                <small>{h >= 12 ? "PM" : "AM"}</small>
+              </span>
+            ))}
+          </div>
         </div>
         {data.machines.map((machine) => (
           <div className="hourrow" key={machine.id}>
@@ -1092,11 +1097,13 @@ function HourlySchedule({
                   const start = new Date(r.startAt),
                     end = new Date(r.endAt),
                     sv = start.getHours() + start.getMinutes() / 60,
-                    ev = end.getHours() + end.getMinutes() / 60,
-                    left = Math.max(0, ((sv - 6) / 12) * 100),
+                    ev = format(end, "yyyy-MM-dd") === boardDay
+                      ? end.getHours() + end.getMinutes() / 60
+                      : 24,
+                    left = (sv / 24) * 100,
                     width = Math.max(
-                      4,
-                      ((Math.min(18, ev) - Math.max(6, sv)) / 12) * 100,
+                      3,
+                      ((Math.min(24, ev) - sv) / 24) * 100,
                     ),
                     town = data.towns.find((t) => t.id === r.townId)!;
                   return (
@@ -1666,6 +1673,7 @@ function EmergencyCard({
   data: ReturnType<typeof useCore>;
 }) {
   const { role, townId } = useUI();
+  const nav = useNavigate();
   const [msg, setMsg] = useState("");
   const m = data.machines.find((x) => x.id === e.machineId)!;
   const conflict = data.reservations.find(
@@ -1684,6 +1692,9 @@ function EmergencyCard({
     try {
       await queueOrValidate(op);
       setMsg("Decision synced");
+      if (decision === "APPROVED") {
+        nav(`/schedule?date=${e.startAt.slice(0, 10)}`);
+      }
     } catch (x: any) {
       setMsg(userFacingError(x));
     }
