@@ -9,6 +9,10 @@ def post(kind,body): return c.post('/api/validate/'+kind,json=body)
 def booking(): return {'machineId':'MDK-GR-01','townId':'kuknoor','startAt':now,'endAt':later,'purpose':'Grade approach road','workLocation':'Kuknoor west road'}
 
 def test_health(): assert c.get('/api/health').status_code==200
+def test_production_origin_receives_cors_headers():
+    headers={'Origin':'https://roadshare-app.onrender.com'}
+    response=c.get('/api/health',headers=headers)
+    assert response.headers['access-control-allow-origin']=='https://roadshare-app.onrender.com'
 def test_valid_reservation(): assert post('reservation',req('reservation',payload=booking())).status_code==200
 def test_future_reservation_keeps_machine_available_now():
     changes=post('reservation',req('reservation',payload=booking())).json()['changes']

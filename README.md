@@ -4,6 +4,8 @@ Shared Road Equipment Custody Board for the fictional Town A, Town B, Town C and
 
 Live prototype: https://roadshare-app.onrender.com/
 
+Submission-ready 300-word summary and 10× scale plan: [SUBMISSION.md](SUBMISSION.md)
+
 One shared Equipment Admin represents the Town Supervisor for all four towns and provides final safety clearance after a mechanic completes a repair.
 
 ## What it demonstrates
