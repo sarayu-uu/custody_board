@@ -185,6 +185,32 @@ export class RoadShareDB extends Dexie {
           if (record.machineId === "MDK-GR-01") record.status = "CLEARED";
         });
       });
+    this.version(7)
+      .stores({
+        towns: "id,name", machines: "id,status,currentCustodianId",
+        reservations: "id,machineId,townId,status,startAt", handoffs: "id,machineId,status",
+        conditionLogs: "id,machineId", emergencyRequests: "id,machineId,status",
+        maintenanceRecords: "id,machineId,status", auditEvents: "id,timestamp,machineId,actingTownId,action",
+        attachments: "id,relatedRecordId", pendingOperations: "operationId,status,createdAt", appMetadata: "id",
+      })
+      .upgrade(async (tx) => {
+        const grader = await tx.table("machines").get("MDK-GR-01");
+        const next = await tx.table("reservations").get("res-gr-next");
+        if (grader?.currentCustodianId === "jalalpur" && next?.townId === "kuknoor") {
+          await tx.table("machines").update("MDK-GR-01", {
+            currentCustodianId: "kuknoor",
+            physicalLocation: "Town D Yard",
+          });
+          await tx.table("reservations").update("res-gr-current", { status: "COMPLETED" });
+          await tx.table("reservations").update("res-gr-next", { status: "ACTIVE" });
+        }
+      });
+    this.auditEvents.hook("updating", () => {
+      throw new Error("Audit records are append-only and cannot be edited.");
+    });
+    this.auditEvents.hook("deleting", () => {
+      throw new Error("Audit records are append-only and cannot be deleted.");
+    });
     this.on("populate", () => this.seed());
   }
   async seed() {

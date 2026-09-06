@@ -2,6 +2,10 @@
 
 Shared Road Equipment Custody Board for the fictional Town A, Town B, Town C and Town D. All people, machines, reservations and incidents shown are demonstration data. The four towns jointly own the equipment; Town A is the central yard.
 
+Live prototype: https://roadshare-app.onrender.com/
+
+Town Admin represents the Town Supervisor in this prototype and provides the final safety clearance after a mechanic completes a repair.
+
 ## What it demonstrates
 
 - Responsive reservation board with preserved preemptions and at-risk bookings

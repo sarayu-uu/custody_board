@@ -37,13 +37,14 @@ describe("RoadShare prototype", () => {
     });
     expect(await screen.findByText("Town D view")).toBeInTheDocument();
   });
-  it("renders the maintenance lock prominently", async () => {
+  it("shows completed repairs as awaiting admin clearance", async () => {
     render(
       <MemoryRouter>
         <App />
       </MemoryRouter>,
     );
-    expect(await screen.findByText("Under repair")).toBeInTheDocument();
+    expect(await screen.findByText("Awaiting clearance")).toBeInTheDocument();
+    expect(screen.getByText("Awaiting Town Admin clearance")).toBeInTheDocument();
   });
   it("renders hash-linked audit history", async () => {
     render(
@@ -54,6 +55,14 @@ describe("RoadShare prototype", () => {
     expect(await screen.findByText(/Hash-linked records/)).toBeInTheDocument();
     expect((await screen.findAllByText(/SHA-256/)).length).toBeGreaterThan(0);
   });
+  it("prevents audit records from being edited or deleted", async () => {
+    const event = await db.auditEvents.toCollection().first();
+    expect(event).toBeDefined();
+    await expect(
+      db.auditEvents.update(event!.id, { reason: "changed" }),
+    ).rejects.toThrow(/append-only/);
+    await expect(db.auditEvents.delete(event!.id)).rejects.toThrow(/append-only/);
+  });
   it("exposes the reset demo data control", async () => {
     render(
       <MemoryRouter>
@@ -61,5 +70,17 @@ describe("RoadShare prototype", () => {
       </MemoryRouter>,
     );
     expect(await screen.findByText("Reset Demo Data")).toBeInTheDocument();
+  });
+  it("explains each role with a connected workflow", async () => {
+    render(
+      <MemoryRouter initialEntries={["/roles"]}>
+        <App />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("Who does what")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Crew Chief" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Town Admin" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Fleet Mechanic" })).toBeInTheDocument();
+    expect(screen.getByText("Accountability chain")).toBeInTheDocument();
   });
 });
