@@ -55,7 +55,7 @@ def validate_handoff(req):
     if p.get('receivingTownId') == m.currentCustodianId: raise DomainError('INVALID_RECEIVER','Choose a different receiving town.','receivingTownId')
     upcoming=sorted([r for r in reservations(req) if r.machineId==m.id and r.status in ('UPCOMING','AT_RISK')],key=lambda r:r.startAt)
     if upcoming and p.get('receivingTownId') != upcoming[0].townId: raise DomainError('RECEIVER_BOOKING_MISMATCH','Custody must transfer to the town with the next booking.','receivingTownId')
-    updated=m.model_copy(update={'currentCustodianId':p['receivingTownId'],'physicalLocation':p['physicalLocation'],'fuelPercentage':int(p['fuelPercentage']),'hourMeter':float(p['hourMeter']),'status':'IN_USE','version':m.version+1}).model_dump()
+    updated=m.model_copy(update={'currentCustodianId':p['receivingTownId'],'physicalLocation':p['physicalLocation'],'fuelPercentage':int(p['fuelPercentage']),'hourMeter':float(p['hourMeter']),'status':'IN_USE' if upcoming else 'AVAILABLE','version':m.version+1}).model_dump()
     booking_updates=[]
     for r in reservations(req):
         if r.machineId==m.id and r.status=='ACTIVE': booking_updates.append(r.model_copy(update={'status':'COMPLETED'}).model_dump(mode='json'))

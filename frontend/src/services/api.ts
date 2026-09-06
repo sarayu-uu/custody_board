@@ -123,8 +123,8 @@ async function applyOptimistic(op: PendingOperation) {
     });
   } else if (type === "handoff") {
     await db.transaction("rw", db.machines, db.reservations, db.handoffs, async () => {
-      await db.machines.put({ ...machine, currentCustodianId: payload.receivingTownId, physicalLocation: payload.physicalLocation, fuelPercentage: Number(payload.fuelPercentage), hourMeter: Number(payload.hourMeter), status: "IN_USE", version: machine.version + 1 });
       const upcoming = (state.reservations || []).filter((r: any) => r.machineId === machine.id && ["UPCOMING", "AT_RISK"].includes(r.status)).sort((a: any, b: any) => a.startAt.localeCompare(b.startAt))[0];
+      await db.machines.put({ ...machine, currentCustodianId: payload.receivingTownId, physicalLocation: payload.physicalLocation, fuelPercentage: Number(payload.fuelPercentage), hourMeter: Number(payload.hourMeter), status: upcoming ? "IN_USE" : "AVAILABLE", version: machine.version + 1 });
       for (const r of state.reservations || []) {
         if (r.machineId === machine.id && r.status === "ACTIVE") await db.reservations.put({ ...r, status: "COMPLETED" });
         else if (upcoming && r.id === upcoming.id) await db.reservations.put({ ...r, status: "ACTIVE" });

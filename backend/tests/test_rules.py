@@ -22,6 +22,12 @@ def test_locked_booking_rejected():
     m={**machine,'status':'MAINTENANCE_LOCKED'}; assert post('reservation',req('reservation',payload=booking(),state={'machine':m,'reservations':[]})).json()['code']=='MACHINE_MAINTENANCE_LOCKED'
 def handoff(): return {'machineId':'MDK-GR-01','receivingTownId':'kuknoor','physicalLocation':'Kuknoor Yard','fuelPercentage':65,'hourMeter':1845.2,'conditionNotes':'No new damage','receivingConfirmed':True,'checks':{}}
 def test_valid_handoff(): assert post('handoff',req('handoff',payload=handoff())).status_code==200
+def test_final_handoff_makes_machine_available_when_no_booking_remains():
+    current={**booking(),'id':'current','townId':'mangalparthy','status':'ACTIVE','version':1}
+    response=post('handoff',req('handoff',payload=handoff(),state={'machine':{**machine,'status':'IN_USE'},'reservations':[current]}))
+    changes=response.json()['changes']
+    assert changes['machines'][0]['status']=='AVAILABLE'
+    assert changes['reservations'][0]['status']=='COMPLETED'
 def test_handoff_must_follow_next_booking():
     p={**handoff(),'receivingTownId':'jalalpur'}
     b={**booking(),'id':'next','status':'UPCOMING','version':1}

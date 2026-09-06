@@ -87,6 +87,25 @@ function neutralPlace(value: string | undefined): string {
     .replace(/manepalle/gi, "Town C")
     .replace(/kuknoor/gi, "Town D");
 }
+async function reconcileIdleMachines() {
+  const [machines, reservations] = await Promise.all([
+    db.machines.toArray(),
+    db.reservations.toArray(),
+  ]);
+  for (const machine of machines) {
+    if (!["IN_USE", "RESERVED", "HANDOFF_DUE"].includes(machine.status)) continue;
+    const hasWork = reservations.some(
+      (reservation) =>
+        reservation.machineId === machine.id &&
+        ["ACTIVE", "UPCOMING", "AT_RISK"].includes(reservation.status),
+    );
+    if (!hasWork)
+      await db.machines.update(machine.id, {
+        status: "AVAILABLE",
+        version: machine.version + 1,
+      });
+  }
+}
 export default function App() {
   const { role, townId, setRole, setTown, offlineTest, setOfflineTest } =
     useUI();
@@ -121,6 +140,9 @@ export default function App() {
   useEffect(() => {
     if (online) syncPending();
   }, [online]);
+  useEffect(() => {
+    reconcileIdleMachines();
+  }, []);
   return (
     <div className="app">
       <aside className={menu ? "open" : ""}>
@@ -1356,7 +1378,11 @@ function HandoffForm({
   const evidenceKey = `handoff:${machine.id}:${townId}`;
   const clearDraft = usePersistentDraft(evidenceKey, watch, reset);
   const go = async (v: any) => {
-    setMsg("Transferring custody...");
+    setMsg("Sending handoff...");
+    const wakeTimer = window.setTimeout(
+      () => setMsg("Server is waking up. Please wait..."),
+      6000,
+    );
     const pendingHandoff = data.handoffs.find(
       (handoff) =>
         handoff.machineId === machine.id && handoff.status === "PENDING",
@@ -1380,6 +1406,8 @@ function HandoffForm({
       }
     } catch (e: any) {
       setMsg(userFacingError(e));
+    } finally {
+      window.clearTimeout(wakeTimer);
     }
   };
   if (receipt)
