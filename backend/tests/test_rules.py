@@ -10,9 +10,9 @@ def booking(): return {'machineId':'MDK-GR-01','townId':'kuknoor','startAt':now,
 
 def test_health(): assert c.get('/api/health').status_code==200
 def test_valid_reservation(): assert post('reservation',req('reservation',payload=booking())).status_code==200
-def test_reservation_marks_available_machine_reserved():
+def test_future_reservation_keeps_machine_available_now():
     changes=post('reservation',req('reservation',payload=booking())).json()['changes']
-    assert changes['machines'][0]['status']=='RESERVED'
+    assert 'machines' not in changes
 def test_past_reservation_rejected():
     p={**booking(),'startAt':'2020-01-01T08:00:00+05:30','endAt':'2020-01-01T16:00:00+05:30'}
     assert post('reservation',req('reservation',payload=p)).json()['code']=='RESERVATION_IN_PAST'
@@ -56,6 +56,10 @@ def test_emergency_accepts_browser_local_time_against_zoned_booking():
     assert any(x['status']=='PREEMPTED' for x in response.json()['changes']['reservations'])
 def test_emergency_locked():
     m={**machine,'status':'MAINTENANCE_LOCKED'};r=req('emergency-decision','TOWN_ADMIN',emergency_payload(),{'machine':m,'reservations':[]});assert post('emergency-decision',r).json()['code']=='MACHINE_MAINTENANCE_LOCKED'
+def test_second_overlapping_emergency_is_rejected():
+    emergency={**booking(),'id':'urgent-one','status':'UPCOMING','version':1,'isEmergency':True}
+    response=post('emergency-decision',req('emergency-decision','TOWN_ADMIN',emergency_payload(),{'machine':machine,'reservations':[emergency]}))
+    assert response.json()['code']=='EMERGENCY_OVERLAP'
 def test_repair_completion_waits_for_town_admin_clearance():
     p={'id':'maint','machineId':'MDK-GR-01','status':'LOCKED','diagnosis':'Seal failed','repairActions':'Seal replaced','completionNotes':'Pressure tested'}
     m={**machine,'status':'MAINTENANCE_LOCKED'}; state={'machine':m,'reservations':[{**booking(),'id':'risk','status':'AT_RISK','version':1}],'maintenanceRecords':[p]}
@@ -77,4 +81,21 @@ def test_town_admin_clearance_returns_machine_to_service():
     assert changes['reservations'][0]['status']=='UPCOMING'
 def test_duplicate_maintenance_lock_rejected():
     m={**machine,'status':'MAINTENANCE_LOCKED'};p={'machineId':m['id'],'severity':'SERIOUS','notes':'Still leaking'}
-    assert post('maintenance-lock',req('maintenance-lock',payload=p,state={'machine':m,'reservations':[]})).json()['code']=='MAINTENANCE_ALREADY_LOCKED'
+    assert post('maintenance-lock',req('maintenance-lock','FLEET_MECHANIC',p,{'machine':m,'reservations':[]})).json()['code']=='MAINTENANCE_ALREADY_LOCKED'
+
+def test_crew_chief_defect_requires_proof():
+    p={'machineId':machine['id'],'severity':'SERIOUS','notes':'Hydraulic hose is leaking'}
+    response=post('maintenance-lock',req('maintenance-lock','CREW_CHIEF',p))
+    assert response.status_code==422
+    assert response.json()['code']=='PROOF_REQUIRED'
+
+def test_crew_chief_can_report_defect_with_proof():
+    p={'machineId':machine['id'],'severity':'SERIOUS','notes':'Hydraulic hose is leaking','attachmentIds':['photo-1']}
+    changes=post('maintenance-lock',req('maintenance-lock','CREW_CHIEF',p)).json()['changes']
+    assert changes['machines'][0]['status']=='MAINTENANCE_LOCKED'
+    assert changes['maintenanceRecords'][0]['attachmentIds']==['photo-1']
+
+def test_fleet_mechanic_can_report_defect_without_proof():
+    p={'machineId':machine['id'],'severity':'SERIOUS','notes':'Hydraulic hose is leaking'}
+    changes=post('maintenance-lock',req('maintenance-lock','FLEET_MECHANIC',p)).json()['changes']
+    assert changes['machines'][0]['status']=='MAINTENANCE_LOCKED'

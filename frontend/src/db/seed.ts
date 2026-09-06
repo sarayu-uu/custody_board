@@ -7,6 +7,12 @@ import type {
   Reservation,
   Town,
 } from "../types";
+
+function demoTime(hoursFromNow: number) {
+  const value = new Date(Date.now() + hoursFromNow * 60 * 60 * 1000);
+  const local = new Date(value.getTime() - value.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 19);
+}
 export const towns: Town[] = [
   {
     id: "mangalparthy",
@@ -145,8 +151,8 @@ export const reservations: Reservation[] = [
     id: "res-gr-current",
     machineId: "MDK-GR-01",
     townId: "mangalparthy",
-    startAt: "2026-09-05T08:00:00+05:30",
-    endAt: "2026-09-05T16:00:00+05:30",
+    startAt: demoTime(-1),
+    endAt: demoTime(6),
     workLocation: "Narsapur approach road",
     purpose: "Restore damaged shoulder",
     status: "ACTIVE",
@@ -156,8 +162,8 @@ export const reservations: Reservation[] = [
     id: "res-gr-next",
     machineId: "MDK-GR-01",
     townId: "kuknoor",
-    startAt: "2026-09-06T08:00:00+05:30",
-    endAt: "2026-09-06T16:00:00+05:30",
+    startAt: demoTime(7),
+    endAt: demoTime(14),
     workLocation: "Town D west road",
     purpose: "Grade monsoon damage",
     status: "UPCOMING",
@@ -235,16 +241,16 @@ export const handoffs: Handoff[] = [
 export const emergencies: Emergency[] = [
   {
     id: "em-pending",
-    machineId: "MDK-BL-02",
+    machineId: "MDK-GR-01",
     requestingTownId: "kuknoor",
     category: "Blocked culvert",
-    startAt: "2026-09-05T17:00:00+05:30",
-    endAt: "2026-09-06T11:00:00+05:30",
+    startAt: demoTime(1),
+    endAt: demoTime(3),
     affectedLocation: "Town D connector road, km 3",
     justification:
       "Heavy rain blocked the culvert and water is crossing the ambulance route.",
     status: "PENDING",
-    conflictingReservationId: "res-bl-current",
+    conflictingReservationId: "res-gr-current",
   },
 ];
 export const maintenance: Maintenance[] = [

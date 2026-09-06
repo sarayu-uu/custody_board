@@ -4,7 +4,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { format } from "date-fns";
+import { addDays, format } from "date-fns";
 import {
   AlertTriangle,
   ArrowRight,
@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { db, sha256 } from "./db/database";
 import { useUI } from "./stores/ui";
-import { queueOrValidate, syncPending } from "./services/api";
+import { queueOrValidate, stopNetworkRequests, syncPending } from "./services/api";
 import type {
   Emergency,
   Machine,
@@ -42,6 +42,7 @@ import type {
   Role,
   Town,
 } from "./types";
+import { userFacingError } from "./services/errors";
 
 const nav = [
   ["/", "Board", Truck],
@@ -55,19 +56,9 @@ const nav = [
 ] as const;
 const labels: Record<Role, string> = {
   CREW_CHIEF: "Crew Chief",
-  TOWN_ADMIN: "Town Admin",
+  TOWN_ADMIN: "Equipment Admin",
   FLEET_MECHANIC: "Fleet Mechanic",
 };
-function userFacingError(error: any) {
-  const raw = String(error?.message || "");
-  if (
-    error?.name === "TypeError" ||
-    error?.name === "TimeoutError" ||
-    /failed to fetch|networkerror|load failed|timed out/i.test(raw)
-  )
-    return "ERROR: Server unavailable. Saved in Needs review. Check the connection and retry.";
-  return `ERROR: ${raw || "This action could not be completed. Check the form and try again."}`;
-}
 const neutralTownNames: Record<string, { name: string; shortName: string }> = {
   mangalparthy: { name: "Town A", shortName: "A" },
   jalalpur: { name: "Town B", shortName: "B" },
@@ -94,12 +85,17 @@ async function reconcileIdleMachines() {
   ]);
   for (const machine of machines) {
     if (!["IN_USE", "RESERVED", "HANDOFF_DUE"].includes(machine.status)) continue;
-    const hasWork = reservations.some(
+    const hasActiveWork = reservations.some(
       (reservation) =>
         reservation.machineId === machine.id &&
-        ["ACTIVE", "UPCOMING", "AT_RISK"].includes(reservation.status),
+        reservation.status === "ACTIVE",
     );
-    if (!hasWork)
+    const hasUpcomingHandoff = reservations.some(
+      (reservation) =>
+        reservation.machineId === machine.id &&
+        ["UPCOMING", "AT_RISK"].includes(reservation.status),
+    );
+    if (!hasActiveWork && !(machine.status === "HANDOFF_DUE" && hasUpcomingHandoff))
       await db.machines.update(machine.id, {
         status: "AVAILABLE",
         version: machine.version + 1,
@@ -168,7 +164,10 @@ export default function App() {
           ))}
         </nav>
         <div className="sidefoot">
-          <button onClick={() => setOfflineTest(!offlineTest)}>
+          <button onClick={() => {
+            if (!offlineTest) stopNetworkRequests();
+            setOfflineTest(!offlineTest);
+          }}>
             <CloudOff /> Offline test: {offlineTest ? "ON" : "OFF"}
           </button>
           <button onClick={() => db.resetDemo()}>
@@ -277,15 +276,15 @@ const roleFlows = [
       ["Handoff", "Receiving crew confirms; custody transfers"],
     ],
     branches: [
-      "Urgent work → Request override → Town Admin decides",
-      "Defect found → Apply safety lock → Fleet Mechanic repairs",
+      "Urgent work → Request override → Equipment Admin decides",
+      "Defect found → Add photo proof → Report and apply safety lock",
     ],
   },
   {
-    role: "Town Admin",
+    role: "Equipment Admin",
     className: "admin",
     icon: ShieldAlert,
-    summary: "Resolves priority conflicts and provides supervisory clearance.",
+    summary: "One shared admin resolves priority conflicts and provides supervisory clearance for every town.",
     steps: [
       ["Review request", "Read justification and displaced booking"],
       ["Decide", "Approve or reject the emergency override"],
@@ -307,12 +306,12 @@ const roleFlows = [
       ["Open lock", "Review defect, severity and movement safety"],
       ["Diagnose", "Identify the fault and required work"],
       ["Repair", "Record actions, parts and completion notes"],
-      ["Complete", "Close the maintenance record"],
-      ["Return service", "Machine becomes available; bookings recover"],
+      ["Complete", "Send the completed repair to Equipment Admin"],
+      ["Admin clearance", "Machine becomes available only after approval"],
     ],
     branches: [
       "Repair incomplete → Lock remains → Scheduling stays blocked",
-      "Repair complete → Machine released → Every town can schedule it",
+      "Repair complete → Await admin clearance → Every town can schedule it",
     ],
   },
 ];
@@ -354,7 +353,7 @@ function RolesPage() {
       </div>
       <section className="rolehandoff">
         <b>Accountability chain</b>
-        <span>Crew Chief</span><ArrowRight /><span>Town Admin</span><ArrowRight /><span>Fleet Mechanic</span><ArrowRight /><span>Available fleet</span>
+        <span>Crew Chief</span><ArrowRight /><span>Equipment Admin</span><ArrowRight /><span>Fleet Mechanic</span><ArrowRight /><span>Available fleet</span>
       </section>
     </>
   );
@@ -373,12 +372,14 @@ function usePersistentDraft(
   key: string,
   watch: any,
   reset: (values: any) => void,
+  normalize?: (values: any) => any,
 ) {
   useEffect(() => {
     const saved = localStorage.getItem(`roadshare-draft:${key}`);
     if (saved) {
       try {
-        reset(JSON.parse(saved));
+        const values = JSON.parse(saved);
+        reset(normalize ? normalize(values) : values);
       } catch {
         localStorage.removeItem(`roadshare-draft:${key}`);
       }
@@ -387,7 +388,7 @@ function usePersistentDraft(
       localStorage.setItem(`roadshare-draft:${key}`, JSON.stringify(values)),
     );
     return () => subscription.unsubscribe();
-  }, [key, reset, watch]);
+  }, [key, normalize, reset, watch]);
   return () => localStorage.removeItem(`roadshare-draft:${key}`);
 }
 function LocalUpload({
@@ -535,6 +536,30 @@ function Dashboard() {
             />
           ))}
       </div>
+      <section className="machineuses" aria-labelledby="machine-uses-title">
+        <div className="sectionlabel">
+          <div>
+            <h2 id="machine-uses-title">What each machine does</h2>
+            <p>Use this quick guide to choose the right equipment for the job.</p>
+          </div>
+        </div>
+        <div className="machineusegrid">
+          {d.machines.map((machine) => (
+            <article key={machine.id}>
+              <header>
+                <MachineGlyph type={`${machine.id} ${machine.type} ${machine.name}`} />
+                <div>
+                  <h3>{machine.name}</h3>
+                  <small>{machine.type}</small>
+                </div>
+              </header>
+              <ul>
+                {machine.purpose.map((task) => <li key={task}>{task}</li>)}
+              </ul>
+            </article>
+          ))}
+        </div>
+      </section>
       {refuelMachine && (
         <RefuelForm
           machine={refuelMachine}
@@ -715,7 +740,7 @@ function MachineCard({
       {m.status === "MAINTENANCE_LOCKED" && (
         <div className="lockbanner">
           <LockKeyhole />
-          <b>{awaitingClearance ? "Awaiting Town Admin clearance" : "Under repair"}</b>
+          <b>{awaitingClearance ? "Awaiting Equipment Admin clearance" : "Under repair"}</b>
           <span>
             {awaitingClearance
               ? "Mechanic completed the repair. The machine remains unavailable until approval."
@@ -818,7 +843,9 @@ function Schedule() {
   const { role, townId } = useUI();
   const [modal, setModal] = useState(false);
   const [showHistory, setShowHistory] = useState(true);
-  const [boardDay, setBoardDay] = useState("2026-09-05");
+  const [boardDay, setBoardDay] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [selectedBooking, setSelectedBooking] = useState<Reservation>();
+  const [reschedule, setReschedule] = useState<Reservation>();
   return (
     <>
       <Head
@@ -836,14 +863,18 @@ function Schedule() {
       />
       <div className="scheduletools">
         <span>Current, upcoming and previous equipment use</span>
-        <label>
-          Schedule date
+        <div className="datenav">
+          <button onClick={() => setBoardDay(format(addDays(new Date(`${boardDay}T12:00:00`), -1), "yyyy-MM-dd"))} aria-label="Previous day">‹</button>
+          <b>{format(new Date(`${boardDay}T12:00:00`), "d MMM yyyy")}</b>
           <input
+            aria-label="Choose schedule date"
             type="date"
             value={boardDay}
             onChange={(e) => setBoardDay(e.target.value)}
           />
-        </label>
+          <button onClick={() => setBoardDay(format(addDays(new Date(`${boardDay}T12:00:00`), 1), "yyyy-MM-dd"))} aria-label="Next day">›</button>
+          <button onClick={() => setBoardDay(format(new Date(), "yyyy-MM-dd"))}>Today</button>
+        </div>
         <label>
           <input
             type="checkbox"
@@ -858,7 +889,16 @@ function Schedule() {
         selectedTownId={townId}
         showHistory={showHistory}
         boardDay={boardDay}
+        onSelect={setSelectedBooking}
       />
+      {d.reservations.some((r) => r.status === "PREEMPTED" && r.townId === townId) && (
+        <section className="preemptednotice">
+          <div className="sectitle"><h2>Bookings displaced by emergency</h2></div>
+          {d.reservations.filter((r) => r.status === "PREEMPTED" && r.townId === townId).map((r) => (
+            <article key={r.id}><AlertTriangle /><span><b>{d.machines.find((m) => m.id === r.machineId)?.name}</b><small>Preempted by Emergency: {r.preemptionReason || "urgent work approved"}. Choose a new time.</small></span><button className="primary" onClick={() => { setReschedule(r); setModal(true); }}>Reschedule</button></article>
+          ))}
+        </section>
+      )}
       <section className="schedule legacy-schedule">
         {d.machines.map((m) => (
           <div className="schedulerow" key={m.id}>
@@ -888,9 +928,17 @@ function Schedule() {
       </section>
       {modal && (
         <ReservationForm
-          close={() => setModal(false)}
+          close={() => { setModal(false); setReschedule(undefined); }}
           data={d}
           onSaved={(date) => setBoardDay(date)}
+          initial={reschedule}
+        />
+      )}
+      {selectedBooking && (
+        <BookingDetails
+          booking={selectedBooking}
+          data={d}
+          close={() => setSelectedBooking(undefined)}
         />
       )}
     </>
@@ -972,11 +1020,13 @@ function HourlySchedule({
   data,
   showHistory,
   boardDay,
+  onSelect,
 }: {
   data: ReturnType<typeof useCore>;
   selectedTownId: string;
   showHistory: boolean;
   boardDay: string;
+  onSelect: (booking: Reservation) => void;
 }) {
   const hours = Array.from({ length: 13 }, (_, i) => i + 6);
   const today = data.reservations.filter(
@@ -1031,9 +1081,10 @@ function HourlySchedule({
                     ),
                     town = data.towns.find((t) => t.id === r.townId)!;
                   return (
-                    <div
+                    <button
                       className="hourbooking"
                       key={r.id}
+                      onClick={() => onSelect(r)}
                       style={{
                         left: `${left}%`,
                         width: `${width}%`,
@@ -1049,13 +1100,13 @@ function HourlySchedule({
                         ) : (
                           <CalendarDays />
                         )}
-                        {r.status.replaceAll("_", " ")}
+                        {r.isEmergency ? "EMERGENCY USE" : r.status.replaceAll("_", " ")}
                       </span>
                       <span>
                         {format(start, "h:mm a")} – {format(end, "h:mm a")}
                       </span>
                       <small>{r.purpose}</small>
-                    </div>
+                    </button>
                   );
                 })}
             </div>
@@ -1097,8 +1148,21 @@ function HourlySchedule({
           </div>
         </section>
       )}
+      <section className="statuslegend">
+        <b>Status guide</b>
+        <span><CheckCircle2 /> ACTIVE — being used now</span>
+        <span><CalendarDays /> UPCOMING — scheduled for later</span>
+        <span><AlertTriangle /> AT RISK — may be delayed</span>
+        <span><ShieldAlert /> PREEMPTED — replaced by emergency use</span>
+        <span><ShieldAlert /> EMERGENCY USE — approved urgent work</span>
+      </section>
     </>
   );
+}
+function BookingDetails({ booking, data, close }: { booking: Reservation; data: ReturnType<typeof useCore>; close: () => void }) {
+  const machine = data.machines.find((item) => item.id === booking.machineId);
+  const town = data.towns.find((item) => item.id === booking.townId);
+  return <Modal title="Booking details" close={close}><div className="receipt bookingdetail"><MachineGlyph type={`${machine?.id} ${machine?.type || ""}`} /><h2>{machine?.name}</h2><Status value={booking.isEmergency ? "EMERGENCY_USE" : booking.status} /><p><b>{town?.name}</b></p><p>{format(new Date(booking.startAt), "d MMM yyyy, h:mm a")} – {format(new Date(booking.endAt), "h:mm a")}</p><p>{neutralPlace(booking.workLocation)}</p><p>{booking.purpose}</p><button className="primary" onClick={close}>Close</button></div></Modal>;
 }
 const reservationSchema = z
   .object({
@@ -1112,22 +1176,42 @@ const reservationSchema = z
     message: "End must be after start",
     path: ["endAt"],
   });
+function futureReservationTimes() {
+  const start = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  start.setHours(8, 0, 0, 0);
+  const end = new Date(start);
+  end.setHours(16, 0, 0, 0);
+  return {
+    startAt: format(start, "yyyy-MM-dd'T'HH:mm"),
+    endAt: format(end, "yyyy-MM-dd'T'HH:mm"),
+  };
+}
+function normalizeReservationDraft(values: any) {
+  if (!values?.startAt || new Date(values.startAt).getTime() <= Date.now()) {
+    return { ...values, ...futureReservationTimes() };
+  }
+  if (!values?.endAt || new Date(values.endAt) <= new Date(values.startAt)) {
+    const end = new Date(values.startAt);
+    end.setHours(end.getHours() + 8);
+    return { ...values, endAt: format(end, "yyyy-MM-dd'T'HH:mm") };
+  }
+  return values;
+}
 function ReservationForm({
   close,
   data,
   onSaved,
+  initial,
 }: {
   close: () => void;
   data: ReturnType<typeof useCore>;
   onSaved: (date: string) => void;
+  initial?: Reservation;
 }) {
   const { role, townId } = useUI();
   const [message, setMessage] = useState("");
-  const tomorrowAt = (hour: number) => {
-    const value = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    value.setHours(hour, 0, 0, 0);
-    return format(value, "yyyy-MM-dd'T'HH:mm");
-  };
+  const futureTimes = futureReservationTimes();
+  const earliestStart = format(new Date(), "yyyy-MM-dd'T'HH:mm");
   const {
     register,
     handleSubmit,
@@ -1137,14 +1221,19 @@ function ReservationForm({
   } = useForm({
     resolver: zodResolver(reservationSchema),
     defaultValues: {
-      machineId: "MDK-GR-01",
-      startAt: tomorrowAt(8),
-      endAt: tomorrowAt(16),
-      workLocation: "",
-      purpose: "",
+      machineId: initial?.machineId || "MDK-GR-01",
+      startAt: futureTimes.startAt,
+      endAt: futureTimes.endAt,
+      workLocation: initial?.workLocation || "",
+      purpose: initial?.purpose || "",
     },
   });
-  const clearDraft = usePersistentDraft(`reservation:${townId}`, watch, reset);
+  const clearDraft = usePersistentDraft(
+    `reservation:${townId}`,
+    watch,
+    reset,
+    normalizeReservationDraft,
+  );
   const onSubmit = async (v: z.infer<typeof reservationSchema>) => {
     const m = data.machines.find((x) => x.id === v.machineId)!;
     const id = crypto.randomUUID();
@@ -1152,7 +1241,7 @@ function ReservationForm({
       "reservation",
       id,
       m.version,
-      { ...v, machineId: m.id, townId, version: 1 },
+      { ...v, machineId: m.id, townId, version: 1, rescheduledFromId: initial?.id },
       { machine: m, reservations: data.reservations },
       role,
       townId,
@@ -1189,10 +1278,10 @@ function ReservationForm({
         </label>
         <div className="twocol">
           <Field label="Start" error={errors.startAt?.message}>
-            <input type="datetime-local" {...register("startAt")} />
+            <input type="datetime-local" min={earliestStart} {...register("startAt")} />
           </Field>
           <Field label="End" error={errors.endAt?.message}>
-            <input type="datetime-local" {...register("endAt")} />
+            <input type="datetime-local" min={earliestStart} {...register("endAt")} />
           </Field>
         </div>
         <Field label="Work location" error={errors.workLocation?.message}>
@@ -1340,6 +1429,7 @@ function HandoffForm({
   const { role, townId } = useUI();
   const [msg, setMsg] = useState("");
   const [receipt, setReceipt] = useState(false);
+  const [receiptPending, setReceiptPending] = useState(false);
   const nextBooking = data.reservations
     .filter(
       (reservation) =>
@@ -1400,10 +1490,9 @@ function HandoffForm({
     try {
       const out = await queueOrValidate(op);
       if (out.queued) setMsg("Saved on this device · Waiting for connection");
-      else {
-        clearDraft();
-        setReceipt(true);
-      }
+      setReceiptPending(Boolean(out.queued));
+      clearDraft();
+      setReceipt(true);
     } catch (e: any) {
       setMsg(userFacingError(e));
     } finally {
@@ -1420,6 +1509,7 @@ function HandoffForm({
             {machine.name} custody was transferred and the condition record was
             sealed.
           </p>
+          {receiptPending && <Notice text="Saved on this phone. Sync pending." />}
           <b>{new Date().toLocaleString()}</b>
           <button className="primary" onClick={() => print()}>
             Print receipt
@@ -1586,6 +1676,8 @@ function EmergencyCard({
         <Status value={e.status} />
         <h2>{e.category}</h2>
         <p>{e.justification}</p>
+        <p><b>{m.name}</b></p>
+        <p><b>{format(new Date(e.startAt), "d MMM yyyy, h:mm a")} – {format(new Date(e.endAt), "h:mm a")}</b></p>
         <span>
           {data.towns.find((t) => t.id === e.requestingTownId)?.name} ·{" "}
           {neutralPlace(e.affectedLocation)}
@@ -1632,6 +1724,8 @@ function EmergencyForm({
 }) {
   const { role, townId } = useUI();
   const [msg, setMsg] = useState("");
+  const futureAt = (minutes: number) =>
+    format(new Date(Date.now() + minutes * 60 * 1000), "yyyy-MM-dd'T'HH:mm");
   const {
     register,
     handleSubmit,
@@ -1643,13 +1737,13 @@ function EmergencyForm({
     defaultValues: {
       machineId: "MDK-GR-01",
       category: "Blocked culvert",
-      startAt: "2026-09-06T06:00",
-      endAt: "2026-09-06T16:00",
+      startAt: futureAt(30),
+      endAt: futureAt(270),
       affectedLocation: "",
       justification: "",
     },
   });
-  const evidenceKey = `emergency:${townId}`;
+  const evidenceKey = `emergency-v2:${townId}`;
   const clearDraft = usePersistentDraft(evidenceKey, watch, reset);
   const v = watch();
   const conflicts = data.reservations.filter(
@@ -1667,7 +1761,7 @@ function EmergencyForm({
           "emergency-request",
           crypto.randomUUID(),
           m.version,
-          p,
+          { ...p, conflictingReservationId: conflicts[0]?.id },
           { machine: m, reservations: data.reservations },
           role,
           townId,
@@ -1747,7 +1841,7 @@ function EmergencyForm({
         )}
         <LocalUpload relatedRecordId={evidenceKey} label="Add local evidence" />
         {msg && <Notice text={msg} />}
-        <button className="danger sticky">Send for Town Admin review</button>
+        <button className="danger sticky">Send for Equipment Admin review</button>
       </form>
     </Modal>
   );
@@ -1804,7 +1898,7 @@ function MaintenancePage() {
                 </p>
                 <small>
                   {r.status === "REPAIRED_AWAITING_CLEARANCE"
-                    ? "Repair complete. Town Admin must clear for use."
+                    ? "Repair complete. Equipment Admin must clear for use."
                     : "Future bookings are marked at risk."}
                 </small>
               </div>
@@ -1853,12 +1947,20 @@ function DefectForm({
   const go = async (p: any) => {
     const m = data.machines.find((x) => x.id === p.machineId)!;
     try {
+      const attachmentIds = await db.attachments
+        .where("relatedRecordId")
+        .equals(evidenceKey)
+        .primaryKeys();
+      if (role === "CREW_CHIEF" && attachmentIds.length === 0) {
+        setMsg("ERROR: Add a photo or document before reporting the defect.");
+        return;
+      }
       const out = await queueOrValidate(
         makeOp(
           "maintenance-lock",
           crypto.randomUUID(),
           m.version,
-          p,
+          { ...p, attachmentIds },
           { machine: m, reservations: data.reservations },
           role,
           townId,
@@ -1976,7 +2078,7 @@ function RepairForm({
           ? "Machine cleared for use"
           : "Repair complete · Machine available to all towns",
       );
-      if (!clear) setMsg("Repair complete - Awaiting Town Admin clearance");
+      if (!clear) setMsg("Repair complete - Awaiting Equipment Admin clearance");
       clearDraft();
       setTimeout(close, 700);
     } catch (e: any) {
@@ -2118,7 +2220,7 @@ function Conflicts() {
       () =>
         db.pendingOperations
           .where("status")
-          .anyOf("CONFLICT", "FAILED_VALIDATION", "PENDING_SYNC")
+          .anyOf("CONFLICT", "FAILED_VALIDATION", "PENDING_SYNC", "SYNCED")
           .toArray(),
       [],
     ) || [];
@@ -2136,14 +2238,22 @@ function Conflicts() {
             <div>
               <Status value={o.status} />
               <h3>{o.operationType.replaceAll("-", " ")}</h3>
-              <p>{o.lastError || "Waiting for connection"}</p>
+              <p>{o.status === "SYNCED" ? "Sent successfully" : o.lastError || "Waiting for connection"}</p>
+              <div className="opdetails">
+                {Object.entries(o.payload)
+                  .filter(([key]) => !["checks", "originalDetails"].includes(key))
+                  .map(([key, value]) => (
+                    <span key={key}><b>{key.replaceAll(/([A-Z])/g, " $1")}</b>: {String(value ?? "")}</span>
+                  ))}
+              </div>
               <small>
                 Saved {format(new Date(o.createdAt), "d MMM, h:mm a")}
               </small>
             </div>
-            <button onClick={() => db.pendingOperations.delete(o.operationId)}>
-              Discard local draft
-            </button>
+            <div className="reviewactions">
+              {o.status === "PENDING_SYNC" && <button onClick={() => syncPending()}>Retry now</button>}
+              {o.status !== "SYNCED" && <button onClick={() => db.pendingOperations.delete(o.operationId)}>Discard</button>}
+            </div>
           </article>
         ))}
         {!ops.length && (

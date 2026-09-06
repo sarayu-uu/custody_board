@@ -9,3 +9,29 @@
 @media(max-width:720px){.roleflow{padding:14px}.flowtrack,.flowsegment{display:grid}.flowsegment{justify-items:stretch}.flowsegment article{width:100%}.flowarrow{transform:rotate(90deg);margin:5px auto}.flowbranches{grid-template-columns:1fr}.rolehandoff{display:grid;justify-items:center}.rolehandoff>b{margin:0}.rolehandoff svg{transform:rotate(90deg)}}
 .error-notice{background:#f9ded9!important;color:#852820!important;border:1px solid #c84f43;font-weight:700;line-height:1.4}.error-notice svg{color:#a9362c!important}
 .localevidence{display:grid;gap:7px}.evidencefile{display:flex;align-items:center;gap:9px;background:#fff;border:1px solid var(--line);padding:7px;border-radius:5px}.evidencefile img{width:52px;height:42px;object-fit:cover;border-radius:3px}.evidencefile span{flex:1}.evidencefile b,.evidencefile small{display:block}.evidencefile b{font-size:10px;overflow-wrap:anywhere}.evidencefile small{font-size:8px;color:var(--green)}.evidencefile button{width:38px;border:0;background:#f5e6e3;color:var(--red);border-radius:4px}.evidencefile button svg{width:15px}.bookingstatus{display:flex!important;align-items:center;gap:4px;width:max-content;margin:3px 0;padding:3px 5px;border-radius:3px;background:#fff;color:#17303d!important;font-size:7px!important;font-weight:900}.bookingstatus svg{width:10px;height:10px}.bookingstatus.at_risk,.bookingstatus.preempted{background:#fff0d5;color:#7b4605!important}.handoffhistory{margin-top:26px}.handoffhistory .historygrid article strong{display:flex;align-items:center;gap:5px}.handoffhistory .historygrid article strong svg{width:13px;height:13px}
+.datenav{display:flex;align-items:center;gap:6px}.datenav button{min-height:36px;border:1px solid #aab5b9;background:#fff;border-radius:4px;padding:5px 10px;font-weight:800}.datenav input{width:38px;min-height:36px;border:1px solid #aab5b9;color:transparent}.hourbooking{border:0;text-align:left}.statuslegend{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px;background:#fff;border:1px solid var(--line);padding:12px;border-radius:6px}.statuslegend>b{width:100%}.statuslegend span{display:flex;align-items:center;gap:4px;font-size:9px}.statuslegend svg{width:13px}.preemptednotice{margin:16px 0;background:#fff4df;border:1px solid #d59b43;padding:13px;border-radius:7px}.preemptednotice article{display:flex;align-items:center;gap:9px}.preemptednotice article>span{flex:1}.preemptednotice b,.preemptednotice small{display:block}.opdetails{display:grid;gap:2px;margin:8px 0;font-size:9px}.opdetails span{overflow-wrap:anywhere}.reviewactions{display:grid;gap:5px}.reviewactions button{border:1px solid var(--line);background:#fff;border-radius:4px}
+@media(min-width:721px){
+  .brand small,.headtitle span{font-size:10px}
+  .sidefoot button{font-size:13px}.sidefoot small{font-size:11px}
+  .connect{font-size:13px}.connect small{font-size:11px}
+  .pagehead>div>span,.sectitle span{font-size:11px}.pagehead p{font-size:15px;line-height:1.45}
+  .sectitle h2{font-size:17px}
+  .attentiongrid small,.actioncards small{font-size:12px}
+  .machinehead>span{font-size:12px}.status{font-size:10px;padding:6px 8px}
+  .machine h2{font-size:21px}.owner{font-size:11px;line-height:1.4}
+  .lockbanner{font-size:12px;line-height:1.4}
+  .facts span,.bookings>div>span{font-size:10px}.facts b{font-size:13px}
+  .meters span{font-size:12px}.bookings b,.bookings small{font-size:12px}
+  .cardquick button{font-size:11px}
+  .scheduletools{font-size:12px}.hourcorner small,.hourmachine small{font-size:10px}
+  .hourheaders>span{font-size:11px}.hourheaders small{font-size:8px}.hourmachine b{font-size:13px}
+  .hourbooking b{font-size:12px}.hourbooking span{font-size:10px}.hourbooking small{font-size:9px}
+  .historygrid b{font-size:13px}.historygrid strong{font-size:12px}.historygrid small{font-size:10px}
+  .request p,.maintenance p,.conflicts p{font-size:13px}.request span,.maintenance small,.conflicts small{font-size:11px}
+  .impact,.notice{font-size:12px}.timeline span,.timeline small,.timeline code{font-size:11px}.timeline h3{font-size:15px}.timeline p{font-size:13px}
+  .modal header span{font-size:10px}.modal label{font-size:12px}.error{font-size:11px}
+  .bookingstatus{font-size:9px!important}.statuslegend span,.opdetails{font-size:11px}
+  .roleflow header p{font-size:13px}.flowsegment small{font-size:9px}.flowsegment b{font-size:14px}.flowsegment p,.flowbranches p{font-size:11px}
+}
+.machineuses{margin-top:30px}.machineuses .sectionlabel{margin-bottom:12px}.machineuses .sectionlabel p{margin:5px 0 0;color:var(--muted);font-size:13px}.machineusegrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.machineusegrid article{background:#fff;border:1px solid var(--line);border-radius:8px;padding:18px}.machineusegrid header{display:flex;align-items:center;gap:10px}.machineusegrid h3{margin:0;font-size:17px}.machineusegrid small{display:block;margin-top:2px;color:var(--muted);font-size:11px}.machineusegrid ul{margin:15px 0 0;padding-left:20px;display:grid;gap:8px}.machineusegrid li{font-size:13px;line-height:1.4;color:#3d5059}.machineusegrid li::marker{color:var(--green)}
+@media(max-width:720px){.machineusegrid{grid-template-columns:1fr}.machineuses .sectionlabel p{font-size:12px}.machineusegrid li{font-size:13px}}

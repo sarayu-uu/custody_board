@@ -33,16 +33,16 @@ def interval(payload):
     return start,end
 
 def validate_reservation(req):
-    require_role(req,'CREW_CHIEF','TOWN_ADMIN'); m=machine(req); require_unlocked(m); start,end=interval(req.payload)
-    if start < datetime.now(timezone.utc): raise DomainError('RESERVATION_IN_PAST','A reservation cannot start in the past.','startAt')
+    require_role(req,'CREW_CHIEF'); m=machine(req); require_unlocked(m); start,end=interval(req.payload)
+    if start < datetime.now(timezone.utc): raise DomainError('RESERVATION_IN_PAST','Choose a future start time.','startAt')
     for existing in reservations(req):
         if existing.machineId==m.id and existing.status in ACTIVE_BOOKING and start < comparable_time(existing.endAt) and end > comparable_time(existing.startAt):
-            raise DomainError('RESERVATION_OVERLAP','This time overlaps another booking.',details={'reservationId':existing.id})
+            raise DomainError('RESERVATION_OVERLAP','Another town has this time. Choose a different time.',details={'reservationId':existing.id})
     for f in ('purpose','workLocation'):
         if not str(req.payload.get(f,'')).strip(): raise DomainError('FIELD_REQUIRED',f'{f} is required.',f)
     r={**req.payload,'id':req.entityId,'status':'UPCOMING','version':1}
-    result={'reservations':[r],'auditEvents':[audit(req,'RESERVATION_CREATED',None,r,req.payload['purpose'])]}
-    if m.status=='AVAILABLE': result['machines']=[m.model_copy(update={'status':'RESERVED','version':m.version+1}).model_dump()]
+    action='BOOKING_RESCHEDULED' if req.payload.get('rescheduledFromId') else 'RESERVATION_CREATED'
+    result={'reservations':[r],'auditEvents':[audit(req,action,None,r,req.payload['purpose'])]}
     return result
 
 def validate_handoff(req):
@@ -66,7 +66,7 @@ def validate_handoff(req):
 
 def validate_emergency_request(req):
     require_role(req,'CREW_CHIEF'); m=machine(req); require_unlocked(m); start,_=interval(req.payload)
-    if start < datetime.now(timezone.utc): raise DomainError('EMERGENCY_IN_PAST','Emergency use cannot start in the past.','startAt')
+    if start < datetime.now(timezone.utc): raise DomainError('EMERGENCY_IN_PAST','Choose a start time later than now.','startAt')
     if not str(req.payload.get('justification','')).strip(): raise DomainError('FIELD_REQUIRED','Emergency justification is required.','justification')
     er={**req.payload,'id':req.entityId,'requestingTownId':req.actor.townId,'status':'PENDING'}
     return {'emergencyRequests':[er],'auditEvents':[audit(req,'EMERGENCY_REQUESTED',None,er,req.payload['justification'])]}
@@ -81,16 +81,23 @@ def validate_emergency_decision(req):
     if decision=='APPROVED':
         start,end=interval(p); affected=[]
         for r in reservations(req):
+            if r.machineId==m.id and getattr(r,'isEmergency',False) and r.status in ACTIVE_BOOKING and start<comparable_time(r.endAt) and end>comparable_time(r.startAt):
+                raise DomainError('EMERGENCY_OVERLAP','Another emergency already has this machine at that time. Choose another machine or time.')
+        for r in reservations(req):
             if r.machineId==m.id and r.status in ACTIVE_BOOKING and start<comparable_time(r.endAt) and end>comparable_time(r.startAt):
-                affected.append(r.model_copy(update={'status':'PREEMPTED','preemptedById':req.entityId,'originalDetails':r.model_dump(mode='json')}).model_dump(mode='json'))
+                affected.append(r.model_copy(update={'status':'PREEMPTED','preemptedById':req.entityId,'preemptionReason':p['justification'],'originalDetails':r.model_dump(mode='json')}).model_dump(mode='json'))
                 events.append(audit(req,'BOOKING_PREEMPTED',r.model_dump(mode='json'),affected[-1],p['justification']))
         emergency_booking={'id':f'{req.entityId}-booking','machineId':m.id,'townId':p['requestingTownId'],'startAt':p['startAt'],'endAt':p['endAt'],'workLocation':p['affectedLocation'],'purpose':p['category'],'status':'UPCOMING','isEmergency':True,'requiresHandoff':True,'version':1}
         result['reservations']=affected+[emergency_booking]
+        if m.currentCustodianId != p['requestingTownId']:
+            result['machines']=[m.model_copy(update={'status':'HANDOFF_DUE','version':m.version+1}).model_dump()]
     result['auditEvents']=events; return result
 
 def validate_maintenance_lock(req):
     require_role(req,'CREW_CHIEF','FLEET_MECHANIC'); m=machine(req); p=req.payload
     if not str(p.get('notes','')).strip(): raise DomainError('FIELD_REQUIRED','Defect notes are required.','notes')
+    if req.actor.role=='CREW_CHIEF' and not p.get('attachmentIds'):
+        raise DomainError('PROOF_REQUIRED','Add a photo or document before reporting the defect.','attachmentIds')
     serious=p.get('severity') in ('SERIOUS','CRITICAL'); updated=m.model_copy(update={'status':'MAINTENANCE_LOCKED' if serious else m.status,'version':m.version+1}).model_dump()
     if serious and m.status=='MAINTENANCE_LOCKED': raise DomainError('MAINTENANCE_ALREADY_LOCKED','This machine already has an active maintenance lock.')
     at_risk=[r.model_copy(update={'status':'AT_RISK'}).model_dump(mode='json') for r in reservations(req) if r.machineId==m.id and r.status=='UPCOMING'] if serious else []

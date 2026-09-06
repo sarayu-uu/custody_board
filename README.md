@@ -4,17 +4,17 @@ Shared Road Equipment Custody Board for the fictional Town A, Town B, Town C and
 
 Live prototype: https://roadshare-app.onrender.com/
 
-Town Admin represents the Town Supervisor in this prototype and provides the final safety clearance after a mechanic completes a repair.
+One shared Equipment Admin represents the Town Supervisor for all four towns and provides final safety clearance after a mechanic completes a repair.
 
 ## What it demonstrates
 
 - Responsive reservation board with preserved preemptions and at-risk bookings
 - Mandatory, receiving-crew-confirmed custody handoffs and printable receipt
-- Emergency request, conflict impact preview and Town Admin approval
-- Safety locks, mechanic repair completion and separate Town Admin clearance
+- Emergency request, conflict impact preview and Equipment Admin approval
+- Safety locks, mechanic repair completion and separate Equipment Admin clearance
 - IndexedDB persistence, offline outbox, conflicts and resettable seed data
 - Append-only, SHA-256 hash-linked local audit timeline
-- Instant Crew Chief, Town Admin and Fleet Mechanic demo roles
+- Instant Crew Chief, Equipment Admin and Fleet Mechanic demo roles
 
 ## Architecture and setup
 

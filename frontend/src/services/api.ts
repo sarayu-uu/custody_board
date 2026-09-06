@@ -11,15 +11,25 @@ export async function queueOrValidate(operation: PendingOperation) {
   }
   return syncOne(operation);
 }
+const activeRequests = new Set<AbortController>();
+export function stopNetworkRequests() {
+  activeRequests.forEach((controller) => controller.abort());
+  activeRequests.clear();
+}
 export async function syncOne(op: PendingOperation) {
   await db.pendingOperations.update(op.operationId, { status: "SYNCING" });
   try {
+    const controller = new AbortController();
+    activeRequests.add(controller);
+    const timeout = window.setTimeout(() => controller.abort(), 65000);
     const res = await fetch(`${API}/api/sync/operation`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(op),
-      signal: AbortSignal.timeout(65000),
+      signal: controller.signal,
     });
+    window.clearTimeout(timeout);
+    activeRequests.delete(controller);
     const body = await res.json();
     if (!res.ok) {
       const conflict = [
@@ -37,7 +47,7 @@ export async function syncOne(op: PendingOperation) {
       throw body;
     }
     await applyChanges(body.changes);
-    await db.pendingOperations.update(op.operationId, { status: "SYNCED" });
+    await db.pendingOperations.update(op.operationId, { status: "SYNCED", lastError: undefined });
     await db.appMetadata.put({
       id: "sync",
       lastSynchronizedAt: new Date().toISOString(),
@@ -45,13 +55,24 @@ export async function syncOne(op: PendingOperation) {
     });
     return body;
   } catch (e: any) {
-    if (!e?.code)
+    if (!e?.code) {
+      const networkFailure =
+        e?.name === "TypeError" ||
+        e?.name === "TimeoutError" ||
+        e?.name === "AbortError" ||
+        /failed to fetch|networkerror|load failed|timed out/i.test(String(e?.message || ""));
       await db.pendingOperations.update(op.operationId, {
         status: "PENDING_SYNC",
         retryCount: op.retryCount + 1,
-        lastError:
-          "Server unavailable. Check the connection and retry.",
+        lastError: networkFailure
+          ? "Server unavailable. Will retry automatically."
+          : "Could not save on this device.",
       });
+      if (networkFailure) {
+        await applyOptimistic(op);
+        return { queued: true };
+      }
+    }
     throw e;
   }
 }
@@ -118,8 +139,6 @@ async function applyOptimistic(op: PendingOperation) {
   if (type === "reservation") {
     await db.transaction("rw", db.machines, db.reservations, async () => {
       await db.reservations.put({ ...payload, id: op.entityId, status: "UPCOMING" });
-      if (machine?.status === "AVAILABLE")
-        await db.machines.put({ ...machine, status: "RESERVED", version: machine.version + 1 });
     });
   } else if (type === "handoff") {
     await db.transaction("rw", db.machines, db.reservations, db.handoffs, async () => {
@@ -149,9 +168,11 @@ async function applyOptimistic(op: PendingOperation) {
         const start = new Date(payload.startAt), end = new Date(payload.endAt);
         for (const r of state.reservations || []) {
           if (r.machineId === machine.id && ["UPCOMING", "ACTIVE", "AT_RISK"].includes(r.status) && start < new Date(r.endAt) && end > new Date(r.startAt))
-            await db.reservations.put({ ...r, status: "PREEMPTED", preemptedById: op.entityId, originalDetails: r });
+            await db.reservations.put({ ...r, status: "PREEMPTED", preemptedById: op.entityId, preemptionReason: payload.justification, originalDetails: r });
         }
         await db.reservations.put({ id: `${op.entityId}-booking`, machineId: machine.id, townId: payload.requestingTownId, startAt: payload.startAt, endAt: payload.endAt, workLocation: payload.affectedLocation, purpose: payload.category, status: "UPCOMING", isEmergency: true, requiresHandoff: true, version: 1 });
+        if (machine.currentCustodianId !== payload.requestingTownId)
+          await db.machines.put({ ...machine, status: "HANDOFF_DUE", version: machine.version + 1 });
       }
     });
   } else if (type === "repair-completion") {

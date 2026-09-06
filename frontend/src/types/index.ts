@@ -43,6 +43,7 @@ export interface Reservation {
   status: ReservationStatus;
   version: number;
   preemptedById?: string;
+  preemptionReason?: string;
   originalDetails?: unknown;
   isEmergency?: boolean;
   requiresHandoff?: boolean;

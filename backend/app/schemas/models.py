@@ -13,7 +13,8 @@ class Machine(BaseModel):
 class Reservation(BaseModel):
     id: str; machineId: str; townId: str; startAt: datetime; endAt: datetime
     workLocation: str = ''; purpose: str = ''; status: ReservationStatus = 'UPCOMING'
-    version: int = 1; preemptedById: str | None = None; originalDetails: dict[str, Any] | None = None
+    version: int = 1; preemptedById: str | None = None; preemptionReason: str | None = None; originalDetails: dict[str, Any] | None = None
+    isEmergency: bool = False; requiresHandoff: bool = False
 
 class Actor(BaseModel):
     role: Role; townId: str | None = None
