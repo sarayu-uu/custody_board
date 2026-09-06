@@ -13,6 +13,13 @@ def test_valid_reservation(): assert post('reservation',req('reservation',payloa
 def test_future_reservation_keeps_machine_available_now():
     changes=post('reservation',req('reservation',payload=booking())).json()['changes']
     assert 'machines' not in changes
+def test_machine_display_fields_survive_backend_updates():
+    rich={**machine,'type':'Grader','jointOwner':'Shared pool','baseYard':'Town A Yard','lastConditionSummary':'Safe','purpose':['Grade roads']}
+    current={**booking(),'id':'current','townId':'mangalparthy','status':'ACTIVE','version':1}
+    response=post('handoff',req('handoff',payload=handoff(),state={'machine':rich,'reservations':[current]}))
+    updated=response.json()['changes']['machines'][0]
+    assert updated['purpose']==['Grade roads']
+    assert updated['type']=='Grader'
 def test_past_reservation_rejected():
     p={**booking(),'startAt':'2020-01-01T08:00:00+05:30','endAt':'2020-01-01T16:00:00+05:30'}
     assert post('reservation',req('reservation',payload=p)).json()['code']=='RESERVATION_IN_PAST'

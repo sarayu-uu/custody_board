@@ -78,6 +78,23 @@ function neutralPlace(value: string | undefined): string {
     .replace(/manepalle/gi, "Town C")
     .replace(/kuknoor/gi, "Town D");
 }
+const machineTaskFallbacks: Record<string, string[]> = {
+  "MDK-GR-01": [
+    "Level unpaved roads",
+    "Restore road shoulders",
+    "Grade damaged approach roads",
+  ],
+  "MDK-BL-02": [
+    "Clear blocked culverts",
+    "Remove storm debris",
+    "Excavate damaged drains",
+  ],
+  "MDK-PP-03": [
+    "Repair potholes",
+    "Apply bitumen and aggregate",
+    "Complete rapid road-surface repairs",
+  ],
+};
 async function reconcileIdleMachines() {
   const [machines, reservations] = await Promise.all([
     db.machines.toArray(),
@@ -554,7 +571,9 @@ function Dashboard() {
                 </div>
               </header>
               <ul>
-                {machine.purpose.map((task) => <li key={task}>{task}</li>)}
+                {(machine.purpose || machineTaskFallbacks[machine.id] || [
+                  "Shared road-maintenance work",
+                ]).map((task) => <li key={task}>{task}</li>)}
               </ul>
             </article>
           ))}

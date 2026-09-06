@@ -9,6 +9,8 @@ ReservationStatus = Literal['UPCOMING','ACTIVE','COMPLETED','CANCELLED','PREEMPT
 class Machine(BaseModel):
     id: str; name: str = ''; status: MachineStatus; currentCustodianId: str | None = None
     physicalLocation: str = ''; fuelPercentage: int = 0; hourMeter: float = 0; version: int = 1
+    type: str = ''; jointOwner: str = ''; baseYard: str = ''; lastConditionSummary: str = ''
+    purpose: list[str] = Field(default_factory=list)
 
 class Reservation(BaseModel):
     id: str; machineId: str; townId: str; startAt: datetime; endAt: datetime
