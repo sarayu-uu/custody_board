@@ -938,12 +938,13 @@ function HandoffForm({
   const {
     register,
     handleSubmit,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(handoffSchema),
     defaultValues: {
       receivingTownId: data.towns.find((t) => t.id !== townId)?.id,
-      physicalLocation: "",
+      physicalLocation:
+        data.towns.find((t) => t.id !== townId)?.yard || "Town Yard",
       fuelPercentage: machine.fuelPercentage,
       hourMeter: machine.hourMeter,
       conditionNotes: "",
@@ -955,6 +956,7 @@ function HandoffForm({
     },
   });
   const go = async (v: any) => {
+    setMsg("Transferring custody...");
     const pendingHandoff = data.handoffs.find(
       (handoff) =>
         handoff.machineId === machine.id && handoff.status === "PENDING",
@@ -991,12 +993,21 @@ function HandoffForm({
           <button className="primary" onClick={() => print()}>
             Print receipt
           </button>
+          <button className="primary" onClick={close}>
+            Done — return to handoffs
+          </button>
         </div>
       </Modal>
     );
   return (
     <Modal title="Complete handoff" close={close}>
-      <form onSubmit={handleSubmit(go)}>
+      <form
+        onSubmit={handleSubmit(go, () =>
+          setMsg(
+            "Handoff not submitted. Complete the required location and notes, then tick the receiving confirmation box.",
+          ),
+        )}
+      >
         <label>
           Receiving town
           <select {...register("receivingTownId")}>
@@ -1069,7 +1080,13 @@ function HandoffForm({
           <em className="error">Receiving confirmation is required</em>
         )}
         {msg && <Notice text={msg} />}
-        <button className="primary sticky">Accept machine</button>
+        <button
+          type="submit"
+          className="primary sticky"
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? "Transferring custody..." : "Accept machine"}
+        </button>
       </form>
     </Modal>
   );
