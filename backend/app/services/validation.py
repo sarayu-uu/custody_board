@@ -53,7 +53,10 @@ def validate_handoff(req):
     if float(p['hourMeter']) < m.hourMeter: raise DomainError('HOUR_METER_DECREASE','Hour meter cannot be lower than the last reading.','hourMeter')
     if not p.get('receivingConfirmed'): raise DomainError('RECEIVING_CONFIRMATION_REQUIRED','The receiving crew must confirm custody.','receivingConfirmed')
     if p.get('receivingTownId') == m.currentCustodianId: raise DomainError('INVALID_RECEIVER','Choose a different receiving town.','receivingTownId')
-    upcoming=sorted([r for r in reservations(req) if r.machineId==m.id and r.status in ('UPCOMING','AT_RISK')],key=lambda r:r.startAt)
+    upcoming=sorted(
+        [r for r in reservations(req) if r.machineId==m.id and r.status in ('UPCOMING','AT_RISK')],
+        key=lambda r: comparable_time(r.startAt),
+    )
     if upcoming and p.get('receivingTownId') != upcoming[0].townId: raise DomainError('RECEIVER_BOOKING_MISMATCH','Custody must transfer to the town with the next booking.','receivingTownId')
     updated=m.model_copy(update={'currentCustodianId':p['receivingTownId'],'physicalLocation':p['physicalLocation'],'fuelPercentage':int(p['fuelPercentage']),'hourMeter':float(p['hourMeter']),'status':'IN_USE' if upcoming else 'AVAILABLE','version':m.version+1}).model_dump()
     booking_updates=[]

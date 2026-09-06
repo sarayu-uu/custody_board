@@ -50,6 +50,14 @@ def test_handoff_completes_current_and_activates_next_booking():
     response=post('handoff',req('handoff',payload=handoff(),state={'machine':machine,'reservations':[current,next_booking]}))
     statuses={item['id']:item['status'] for item in response.json()['changes']['reservations']}
     assert statuses=={'current':'COMPLETED','next':'ACTIVE'}
+def test_handoff_sorts_mixed_local_and_zoned_booking_times():
+    current={**booking(),'id':'current','townId':'mangalparthy','status':'ACTIVE','version':1}
+    local_next={**booking(),'id':'local-next','startAt':'2026-09-07T09:00','endAt':'2026-09-07T12:00','status':'UPCOMING','version':1}
+    zoned_later={**booking(),'id':'zoned-later','startAt':'2026-09-07T13:00:00+05:30','endAt':'2026-09-07T15:00:00+05:30','status':'UPCOMING','version':1}
+    response=post('handoff',req('handoff',payload=handoff(),state={'machine':machine,'reservations':[current,zoned_later,local_next]}))
+    assert response.status_code==200
+    statuses={item['id']:item['status'] for item in response.json()['changes']['reservations']}
+    assert statuses['local-next']=='ACTIVE'
 def test_handoff_missing_notes():
     p=handoff();p['conditionNotes']='';assert post('handoff',req('handoff',payload=p)).json()['code']=='FIELD_REQUIRED'
 def test_hour_decrease():
